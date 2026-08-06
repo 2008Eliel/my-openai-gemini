@@ -28,7 +28,7 @@ export default {
           return handleEmbeddings(await request.json(), apiKey)
             .catch(errHandler);
         case pathname.endsWith("/models"):
-          assert(request.method === "GET");
+          assert(request.method === "GET" || request.method === "POST");
           return handleModels(apiKey)
             .catch(errHandler);
         default:
