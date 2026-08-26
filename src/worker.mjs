@@ -688,7 +688,7 @@ function toOpenAiStream (line, controller) {
     }
   } catch (err) {
     console.error("Error parsing response:", err);
-    if (!this.shared.is_buffers_rest) { line =+ delimiter; }
+    if (!this.shared.is_buffers_rest) { line += delimiter; }
     controller.enqueue(line); // output as is
     return;
   }
