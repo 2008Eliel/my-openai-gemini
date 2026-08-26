@@ -6,8 +6,10 @@ export default {
       return handleOPTIONS();
     }
     const errHandler = (err) => {
-      console.error(err);
-      return new Response(err.message, fixCors({ status: err.status ?? 500 }));
+  console.error(err);
+  const body = JSON.stringify({ error: { message: err.message, code: err.status ?? 500 } });
+  return new Response(body, fixCors({ status: err.status ?? 500, headers: { "Content-Type": "application/json" } }));
+};
     };
     try {
       const auth = request.headers.get("Authorization");
