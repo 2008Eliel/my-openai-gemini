@@ -158,6 +158,7 @@ async function handleCompletions (req, apiKey) {
     default:
       model = DEFAULT_MODEL;
   }
+  req.stream = false; // Force non-streaming: AQ auth keys are not yet supported on Google's streaming endpoint
   let isV3 = model.startsWith("gemini-3");
   let body = await transformRequest(req, isV3);
   const extra = req.extra_body?.google;
