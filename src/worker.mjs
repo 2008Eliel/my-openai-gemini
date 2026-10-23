@@ -20,10 +20,14 @@ export default {
       };
       const { pathname } = new URL(request.url);
       switch (true) {
-        case pathname.endsWith("/chat/completions"):
+        case pathname.endsWith("/chat/completions"): {
           assert(request.method === "POST");
-          return handleCompletions(await request.json(), apiKey)
-            .catch(errHandler);
+          const req = await request.json();
+          return withKeepAlive(
+            handleCompletions(req, apiKey).catch(errHandler),
+            !!req.stream
+          );
+        }
         case pathname.endsWith("/embeddings"):
           assert(request.method === "POST");
           return handleEmbeddings(await request.json(), apiKey)
@@ -53,6 +57,55 @@ const fixCors = ({ headers, status, statusText }) => {
   headers = new Headers(headers);
   headers.set("Access-Control-Allow-Origin", "*");
   return { headers, status, statusText };
+};
+
+// Devuelve la Response al instante y mantiene la conexión viva mientras Gemini responde,
+// para que Vercel no mate la función por el límite de 25s hasta el primer byte.
+const withKeepAlive = (upstreamPromise, isStream) => {
+  const { readable, writable } = new TransformStream();
+  const writer = writable.getWriter();
+  const enc = new TextEncoder();
+  const ping = enc.encode(isStream ? ": keepalive\n\n" : " ");
+  const safeWrite = (chunk) => writer.write(chunk).catch(() => {});
+
+  safeWrite(ping); // primer byte inmediato
+  const timer = setInterval(() => safeWrite(ping), 10000);
+
+  (async () => {
+    try {
+      const res = await upstreamPromise;
+      clearInterval(timer);
+      if (!res.ok) {
+        // el status ya se envió como 200: el error viaja en el cuerpo
+        let text = await res.text();
+        try { text = JSON.stringify(JSON.parse(text)); } catch { /* texto plano */ }
+        await writer.write(enc.encode(isStream ? `data: ${text}\n\n` : text));
+      } else if (res.body) {
+        const reader = res.body.getReader();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) { break; }
+          await writer.write(value);
+        }
+      }
+    } catch (err) {
+      clearInterval(timer);
+      console.error(err);
+      const msg = JSON.stringify({ error: { message: String(err?.message ?? err), code: 500 } });
+      await safeWrite(enc.encode(isStream ? `data: ${msg}\n\n` : msg));
+    } finally {
+      clearInterval(timer);
+      await writer.close().catch(() => {});
+    }
+  })();
+
+  return new Response(readable, fixCors({
+    status: 200,
+    headers: {
+      "Content-Type": isStream ? "text/event-stream" : "application/json",
+      "Cache-Control": "no-cache, no-transform",
+    },
+  }));
 };
 
 const handleOPTIONS = async () => {
@@ -313,6 +366,9 @@ const transformConfig = (req, isV3) => {
       default:
         throw new HttpError("Unsupported response_format.type", 400);
     }
+  }
+  if (isV3 && !req.reasoning_effort) {
+    cfg.thinkingConfig = { thinkingLevel: "low" }; // JanitorAI no envía reasoning_effort
   }
   if (req.reasoning_effort) {
     cfg.thinkingConfig =
