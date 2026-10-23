@@ -368,7 +368,7 @@ const transformConfig = (req, isV3) => {
     }
   }
   if (isV3 && !req.reasoning_effort) {
-    cfg.thinkingConfig = { thinkingLevel: "low" }; // JanitorAI no envía reasoning_effort
+    cfg.thinkingConfig = { thinkingLevel: "medium" }; // JanitorAI no envía reasoning_effort
   }
   if (req.reasoning_effort) {
     cfg.thinkingConfig =
